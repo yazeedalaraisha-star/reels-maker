@@ -166,16 +166,20 @@ class ScriptWriter {
         .map((b) => b['text'] as String)
         .toList();
     if (texts.isEmpty) throw Exception('Claude ما رجّع نص');
-    final raw = texts.last;
+    return _parseText(texts.last, topic);
+  }
+
+  List<ReelProject> _parseText(String raw, String topic) {
     Map<String, dynamic> j;
     try {
       j = jsonDecode(raw);
     } catch (_) {
       final m = RegExp(r'\{[\s\S]*\}').firstMatch(raw);
-      if (m == null) throw Exception('رد Claude مش JSON');
+      if (m == null) throw Exception('الرد مش JSON');
       j = jsonDecode(m.group(0)!);
     }
-    return (j['reels'] as List).map((r) {
+    final list = j['reels'] is List ? j['reels'] as List : [j];
+    return list.map((r) {
       final scenes = (r['scenes'] as List)
           .map((s) => Scene.fromJson(Map<String, dynamic>.from(s)))
           .where((s) => s.narration.trim().isNotEmpty)
@@ -200,14 +204,6 @@ class ScriptWriter {
   Future<List<ReelProject>> fromTrends(List<TrendItem> trends, String topic,
       {int? count, List<String> avoidTitles = const []}) async {
     final n = count ?? settings.reelsPerRun;
-    if (!canUseClaude) {
-      log('📴 بدون مفتاح Claude: رح أستخدم المولد الأوفلاين');
-      final picked = trends.take(n).toList();
-      if (picked.isEmpty) return [offline(topic)];
-      return picked
-          .map((t) => offline('${t.title}. ${t.summary ?? ''}', title: t.title))
-          .toList();
-    }
     final list = trends.take(60).map((t) => t.describe()).join('\n');
     final avoid = avoidTitles.isEmpty
         ? ''
@@ -224,9 +220,17 @@ ${useWeb ? 'تقدر تستخدم البحث على النت عشان تتأكد
 اختار أقوى $n مواضيع مختلفة عن بعض (الأكثر انتشاراً وقابلية إنها تصير فايرال) وبتناسب الموضوع المطلوب،
 واكتب لكل وحدة ريل كامل. رجّع بالضبط $n ريلز.
 ''';
-    log('🧠 Claude عم يختار التريندات ويكتب $n سكربتات...');
-    final res = await _callClaude(_requestBody(prompt, webSearch: useWeb));
-    final reels = _parse(res, topic);
+    final List<ReelProject> reels;
+    if (canUseClaude) {
+      log('🧠 Claude عم يختار التريندات ويكتب $n سكربتات...');
+      final res = await _callClaude(_requestBody(prompt, webSearch: useWeb));
+      reels = _parse(res, topic);
+    } else {
+      reels = await _freeOrOffline(prompt, topic, n,
+          () => trends.isEmpty
+              ? [offline(topic)]
+              : trends.take(n).map(offlineFromTrend).toList());
+    }
     for (final r in reels) {
       r.trendSource = topic;
     }
@@ -236,12 +240,16 @@ ${useWeb ? 'تقدر تستخدم البحث على النت عشان تتأكد
 
   /// ريلز من فكرة المستخدم نفسه.
   Future<List<ReelProject>> fromIdea(String idea, {int count = 1}) async {
-    if (!canUseClaude) return [offline(idea)];
     final prompt = '''
 فكرة المستخدم: $idea
 
 اكتب $count ريل${count > 1 ? 'ز بزوايا مختلفة' : ''} عن هالفكرة. لو الفكرة قصة، احكيها بتشويق مع نهاية قوية.
 ''';
+    if (!canUseClaude) {
+      return (await _freeOrOffline(prompt, idea, count, () => [offline(idea)]))
+          .take(count)
+          .toList();
+    }
     log('🧠 Claude عم يكتب السكربت من فكرتك...');
     final res = await _callClaude(_requestBody(prompt, webSearch: settings.claudeWebSearch));
     return _parse(res, idea).take(count).toList();
@@ -249,7 +257,12 @@ ${useWeb ? 'تقدر تستخدم البحث على النت عشان تتأكد
 
   /// يعيد كتابة نص مشهد واحد (من المحرر).
   Future<String> rewriteLine(String line, String instruction) async {
-    if (!canUseClaude) return line;
+    final ask =
+        'أعد كتابة هالجملة لريل بـ${settings.dialectPrompt}. $instruction\nرجّع الجملة الجديدة بس بدون أي شرح.\n\nالجملة: $line';
+    if (!canUseClaude) {
+      if (settings.scriptProvider == ScriptProvider.offline) return line;
+      return (await freeLlm('أنت كاتب محتوى ريلز عربي.', ask, json: false)).trim();
+    }
     final r = await _http.post(
       Uri.parse('https://api.anthropic.com/v1/messages'),
       headers: {
@@ -279,6 +292,87 @@ ${useWeb ? 'تقدر تستخدم البحث على النت عشان تتأكد
         .trim();
   }
 
+  // ---------------- ذكاء اصطناعي مجاني (بدون مفتاح) ----------------
+  static const _jsonShape = '''
+رجّع JSON فقط بهالشكل بالضبط (بدون أي كلام قبله أو بعده):
+{"reels":[{"title":"...","topic":"...","style":"news|story|horror|sport|luxury|clean|neon","hook":"...",
+"scenes":[{"narration":"...","on_screen":"...","search_query":"english visual words","highlight_words":["..."]}],
+"caption":"...","hashtags":["..."],"cta":"..."}]}''';
+
+  /// نموذج لغوي مجاني من Pollinations (ما بيحتاج مفتاح).
+  Future<String> freeLlm(String system, String user, {bool json = true}) async {
+    Object? last;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        final r = await _http
+            .post(
+              Uri.parse('https://text.pollinations.ai/openai'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'model': 'openai',
+                'messages': [
+                  {'role': 'system', 'content': system},
+                  {'role': 'user', 'content': user},
+                ],
+                if (json) 'response_format': {'type': 'json_object'},
+                'seed': Random().nextInt(1 << 30),
+                'referrer': 'reels-maker',
+              }),
+            )
+            .timeout(const Duration(minutes: 3));
+        if (r.statusCode == 200) {
+          final body = utf8.decode(r.bodyBytes);
+          try {
+            final j = jsonDecode(body);
+            final c = j['choices']?[0]?['message']?['content'];
+            if (c is String && c.trim().isNotEmpty) return c;
+          } catch (_) {}
+          if (body.trim().isNotEmpty) return body;
+        }
+        last = 'HTTP ${r.statusCode}';
+      } catch (e) {
+        last = e;
+      }
+      await Future.delayed(Duration(seconds: 3 * (attempt + 1)));
+    }
+    throw Exception('الذكاء المجاني ما رد: $last');
+  }
+
+  Future<List<ReelProject>> _freeOrOffline(String prompt, String topic, int n,
+      List<ReelProject> Function() fallback) async {
+    if (settings.scriptProvider != ScriptProvider.offline) {
+      try {
+        log('🧠 الذكاء الاصطناعي المجاني عم يكتب $n سكربتات...');
+        final raw = await freeLlm(_systemPrompt(), '$prompt\n$_jsonShape');
+        final reels = _parseText(raw, topic)
+            .where((r) => r.scenes.length >= 2)
+            .toList();
+        if (reels.isNotEmpty) return reels;
+      } catch (e) {
+        log('⚠️ $e');
+      }
+    }
+    log('📴 رح أستخدم المولد البسيط بدون نت');
+    return fallback();
+  }
+
+  /// سكربت بسيط من تريند (بدون ذكاء اصطناعي).
+  ReelProject offlineFromTrend(TrendItem t) {
+    final body = [
+      'خلونا نحكي عن ${t.title}، الموضوع اللي الكل عم يحكي فيه هلأ.',
+      if (t.summary != null && t.summary!.trim().isNotEmpty) t.summary!,
+      if (t.traffic != null) 'وصل عدد البحث عنه لـ ${t.traffic}.',
+      'شو رأيكم بالموضوع؟ اكتبولنا بالتعليقات.',
+    ].join(' ');
+    final r = offline(body, title: t.title);
+    r.hook = t.title.split(' ').take(6).join(' ');
+    for (final s in r.scenes) {
+      if (s.searchQuery.isEmpty) s.searchQuery = t.title;
+    }
+    r.trendSource = t.source;
+    return r;
+  }
+
   /// مولّد بدون إنترنت: يقسم النص لمشاهد ويطلع هاشتاجات بسيطة.
   ReelProject offline(String text, {String? title}) {
     final clean = text.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -303,7 +397,7 @@ ${useWeb ? 'تقدر تستخدم البحث على النت عشان تتأكد
       return Scene(
         narration: s,
         onScreen: '',
-        searchQuery: '',
+        searchQuery: s.split(' ').take(6).join(' '),
         highlights: longest.take(1).toList(),
       );
     }).toList();

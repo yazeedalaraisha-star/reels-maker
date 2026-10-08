@@ -1,11 +1,11 @@
 // كل إعدادات التطبيق بمكان واحد. الكلاس هاد Dart صافي (بدون Flutter)
 // عشان خدمات التوليد تقدر تستخدمه وتنفحص من سطر الأوامر.
 
-enum TtsProvider { munsit, elevenlabs, huggingface, device, none }
+enum TtsProvider { edge, munsit, elevenlabs, huggingface, google, device, none }
 
-enum ScriptProvider { claude, offline }
+enum ScriptProvider { claude, free, offline }
 
-enum MediaProvider { pexels, pixabay, local, aiImages, gradient }
+enum MediaProvider { freeAi, openverse, pexels, pixabay, local, aiImages, gradient }
 
 class AppSettings {
   // ---------- الذكاء الاصطناعي (السكربت) ----------
@@ -33,6 +33,8 @@ class AppSettings {
   String hfToken;
   String hfTtsModel;
   String hfImageModel;
+  String edgeVoice; // صوت مايكروسوفت المجاني
+  int edgeRate; // نسبة السرعة -50..+50
   String deviceVoice; // اسم صوت الجهاز (اختياري)
   double deviceRate;
 
@@ -71,6 +73,7 @@ class AppSettings {
   bool karaokeCaptions;
   String dialectPrompt; // وصف اللهجة للسكربت
   String outputFolder;
+  String driveSyncFolder; // مجلد Google Drive على الكمبيوتر (بدون ربط)
 
   // ---------- Google Drive ----------
   bool autoUpload;
@@ -86,12 +89,12 @@ class AppSettings {
   bool autoRunOnStart;
 
   AppSettings({
-    this.scriptProvider = ScriptProvider.claude,
+    this.scriptProvider = ScriptProvider.free,
     this.anthropicKey = '',
     this.claudeModel = 'claude-opus-5-5',
     this.claudeEffort = 'medium',
     this.claudeWebSearch = true,
-    this.ttsProvider = TtsProvider.munsit,
+    this.ttsProvider = TtsProvider.edge,
     List<TtsProvider>? ttsFallbacks,
     this.munsitKey = '',
     this.munsitBaseUrl = 'https://api.munsit.com/api/v1',
@@ -108,9 +111,11 @@ class AppSettings {
     this.hfToken = '',
     this.hfTtsModel = 'facebook/mms-tts-ara',
     this.hfImageModel = 'black-forest-labs/FLUX.1-schnell',
+    this.edgeVoice = 'ar-SA-HamedNeural',
+    this.edgeRate = 5,
     this.deviceVoice = '',
     this.deviceRate = 0.5,
-    this.mediaProvider = MediaProvider.pexels,
+    this.mediaProvider = MediaProvider.freeAi,
     this.pexelsKey = '',
     this.pixabayKey = '',
     this.localMediaFolder = '',
@@ -139,6 +144,7 @@ class AppSettings {
     this.dialectPrompt =
         'لهجة سعودية بيضاء قريبة من اللهجة الأردنية والشامية، عفوية وحماسية ومفهومة لكل العرب',
     this.outputFolder = '',
+    this.driveSyncFolder = '',
     this.autoUpload = true,
     this.driveClientId = '',
     this.driveClientSecret = '',
@@ -149,7 +155,7 @@ class AppSettings {
     this.autoRunHours = 24,
     this.autoRunOnStart = false,
   })  : ttsFallbacks =
-            ttsFallbacks ?? [TtsProvider.elevenlabs, TtsProvider.device],
+            ttsFallbacks ?? [TtsProvider.munsit, TtsProvider.elevenlabs, TtsProvider.google, TtsProvider.device],
         topics = topics ?? ['ترند اليوم'],
         subreddits = subreddits ?? ['worldnews', 'todayilearned', 'nosleep'];
 
@@ -176,6 +182,8 @@ class AppSettings {
         'hfToken': hfToken,
         'hfTtsModel': hfTtsModel,
         'hfImageModel': hfImageModel,
+        'edgeVoice': edgeVoice,
+        'edgeRate': edgeRate,
         'deviceVoice': deviceVoice,
         'deviceRate': deviceRate,
         'mediaProvider': mediaProvider.name,
@@ -206,6 +214,7 @@ class AppSettings {
         'karaokeCaptions': karaokeCaptions,
         'dialectPrompt': dialectPrompt,
         'outputFolder': outputFolder,
+        'driveSyncFolder': driveSyncFolder,
         'autoUpload': autoUpload,
         'driveClientId': driveClientId,
         'driveClientSecret': driveClientSecret,
@@ -256,6 +265,8 @@ class AppSettings {
       hfToken: str('hfToken', d.hfToken),
       hfTtsModel: str('hfTtsModel', d.hfTtsModel),
       hfImageModel: str('hfImageModel', d.hfImageModel),
+      edgeVoice: str('edgeVoice', d.edgeVoice),
+      edgeRate: integer('edgeRate', d.edgeRate),
       deviceVoice: str('deviceVoice', d.deviceVoice),
       deviceRate: dbl('deviceRate', d.deviceRate),
       mediaProvider:
@@ -287,6 +298,7 @@ class AppSettings {
       karaokeCaptions: b('karaokeCaptions', d.karaokeCaptions),
       dialectPrompt: str('dialectPrompt', d.dialectPrompt),
       outputFolder: str('outputFolder', d.outputFolder),
+      driveSyncFolder: str('driveSyncFolder', d.driveSyncFolder),
       autoUpload: b('autoUpload', d.autoUpload),
       driveClientId: str('driveClientId', d.driveClientId),
       driveClientSecret: str('driveClientSecret', d.driveClientSecret),

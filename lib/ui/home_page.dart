@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app/app_state.dart';
 import '../core/settings.dart';
+import '../services/free_tts.dart';
 import 'widgets.dart';
 
 const quickTopics = [
@@ -38,12 +39,13 @@ class _HomePageState extends State<HomePage> {
       listenable: s,
       builder: (context, _) {
         final st = s.settings;
+        final voice = freeArabicVoices.firstWhere((v) => v.id == st.edgeVoice, orElse: () => freeArabicVoices.first);
         final checks = <(String, bool, String)>[
-          ('كتابة السكربت', st.scriptProvider == ScriptProvider.offline || st.anthropicKey.isNotEmpty,
-              st.scriptProvider == ScriptProvider.offline ? 'أوفلاين' : (st.anthropicKey.isEmpty ? 'حط مفتاح Claude' : 'Claude')),
-          ('التعليق الصوتي', st.ttsProvider == TtsProvider.device || _ttsReady(st), _ttsLabel(st)),
-          ('المقاطع', st.mediaProvider == MediaProvider.gradient || _mediaReady(st), _mediaLabel(st)),
-          ('Google Drive', st.driveRefreshToken.isNotEmpty, st.driveRefreshToken.isNotEmpty ? 'مربوط' : 'مش مربوط'),
+          ('كتابة السكربت', true, st.anthropicKey.isNotEmpty && st.scriptProvider == ScriptProvider.claude ? 'Claude' : st.scriptProvider == ScriptProvider.offline ? 'بسيط بدون نت' : 'ذكاء اصطناعي مجاني'),
+          ('التعليق الصوتي', true, _ttsReady(st) ? _ttsLabel(st) : 'صوت مجاني: ${voice.name} (${voice.details.split(' •').first})'),
+          ('المقاطع والصور', true, _mediaReady(st) ? _mediaLabel(st) : 'صور ذكاء اصطناعي مجانية'),
+          ('Google Drive', st.driveRefreshToken.isNotEmpty || st.driveSyncFolder.isNotEmpty,
+              st.driveRefreshToken.isNotEmpty ? 'مربوط' : st.driveSyncFolder.isNotEmpty ? 'بينحفظ بمجلد درايف على الكمبيوتر' : 'اختياري: الفيديوهات بتنحفظ بالجهاز'),
         ];
         return PageScaffold(title: 'صانع الريلز', children: [
           SectionCard(children: [
@@ -114,6 +116,7 @@ class _HomePageState extends State<HomePage> {
       '${d.year}/${d.month}/${d.day} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 
   bool _ttsReady(AppSettings s) => switch (s.ttsProvider) {
+        TtsProvider.edge || TtsProvider.google => false,
         TtsProvider.munsit => s.munsitKey.isNotEmpty && s.munsitVoiceId.isNotEmpty,
         TtsProvider.elevenlabs => s.elevenKey.isNotEmpty && s.elevenVoiceId.isNotEmpty,
         TtsProvider.huggingface => s.hfToken.isNotEmpty,
@@ -121,6 +124,7 @@ class _HomePageState extends State<HomePage> {
         TtsProvider.none => true,
       };
   String _ttsLabel(AppSettings s) => switch (s.ttsProvider) {
+        TtsProvider.edge || TtsProvider.google => 'مجاني',
         TtsProvider.munsit => _ttsReady(s) ? 'منصت' : 'منصت: حط المفتاح واختار صوت',
         TtsProvider.elevenlabs => _ttsReady(s) ? 'ElevenLabs' : 'ElevenLabs: حط المفتاح واختار صوت',
         TtsProvider.huggingface => _ttsReady(s) ? 'Hugging Face' : 'حط توكن Hugging Face',
@@ -128,6 +132,7 @@ class _HomePageState extends State<HomePage> {
         TtsProvider.none => 'بدون صوت',
       };
   bool _mediaReady(AppSettings s) => switch (s.mediaProvider) {
+        MediaProvider.freeAi || MediaProvider.openverse => false,
         MediaProvider.pexels => s.pexelsKey.isNotEmpty,
         MediaProvider.pixabay => s.pixabayKey.isNotEmpty,
         MediaProvider.local => s.localMediaFolder.isNotEmpty,
@@ -135,6 +140,8 @@ class _HomePageState extends State<HomePage> {
         MediaProvider.gradient => true,
       };
   String _mediaLabel(AppSettings s) => switch (s.mediaProvider) {
+        MediaProvider.freeAi => 'صور AI مجانية',
+        MediaProvider.openverse => 'صور حقيقية مجانية',
         MediaProvider.pexels => _mediaReady(s) ? 'Pexels' : 'حط مفتاح Pexels (مجاني)',
         MediaProvider.pixabay => _mediaReady(s) ? 'Pixabay' : 'حط مفتاح Pixabay (مجاني)',
         MediaProvider.local => _mediaReady(s) ? 'ملفاتك' : 'اختار مجلد المقاطع',

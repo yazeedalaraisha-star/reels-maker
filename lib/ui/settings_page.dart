@@ -8,6 +8,7 @@ import '../app/app_state.dart';
 import '../core/settings.dart';
 import '../core/styles.dart';
 import '../services/drive.dart';
+import '../services/free_tts.dart';
 import '../services/trends.dart';
 import '../services/tts.dart';
 import 'widgets.dart';
@@ -108,17 +109,28 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final ttsNames = {
-      TtsProvider.munsit: 'منصت (عربي ولهجات خليجية) ⭐',
+      TtsProvider.edge: 'مجاني بدون مفتاح (سعودي، أردني...) ⭐',
+      TtsProvider.google: 'Google المجاني',
+      TtsProvider.munsit: 'منصت (بمفتاح)',
       TtsProvider.elevenlabs: 'ElevenLabs',
       TtsProvider.huggingface: 'Hugging Face',
       TtsProvider.device: 'صوت الجهاز (بدون نت)',
       TtsProvider.none: 'بدون تعليق صوتي',
     };
     return PageScaffold(title: 'الإعدادات', children: [
-      // ---------------- Claude ----------------
-      SectionCard(title: 'كتابة السكربت (Claude)', icon: Icons.psychology_rounded, children: [
-        dropdown('الطريقة', st.scriptProvider, {ScriptProvider.claude: 'Claude (أونلاين، احترافي)', ScriptProvider.offline: 'بدون نت (بسيط)'},
-            (v) => st.scriptProvider = v),
+      const SectionCard(children: [
+        Text('🎁 التطبيق شغّال كامل بدون أي مفتاح: الكتابة والصوت والصور كلها مجانية. المفاتيح تحت اختيارية بس لجودة أعلى.',
+            style: TextStyle(fontWeight: FontWeight.w700)),
+      ]),
+      // ---------------- السكربت ----------------
+      SectionCard(title: 'كتابة السكربت', icon: Icons.psychology_rounded, children: [
+        dropdown('الطريقة', st.scriptProvider, {
+          ScriptProvider.free: 'ذكاء اصطناعي مجاني بدون مفتاح ⭐',
+          ScriptProvider.claude: 'Claude (بمفتاح، الأقوى)',
+          ScriptProvider.offline: 'بسيط بدون نت',
+        }, (v) => st.scriptProvider = v),
+        const Text('اختياري: Claude', style: TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 8),
         text('مفتاح Claude API', st.anthropicKey, (v) => st.anthropicKey = v, secret: true, hint: 'sk-ant-...'),
         link('جيب مفتاح من console.anthropic.com', 'https://console.anthropic.com/settings/keys'),
         dropdown('الموديل', st.claudeModel, {
@@ -135,9 +147,12 @@ class _SettingsPageState extends State<SettingsPage> {
       // ---------------- الصوت ----------------
       SectionCard(title: 'التعليق الصوتي', icon: Icons.record_voice_over_rounded, children: [
         dropdown('المزوّد الأساسي', st.ttsProvider, ttsNames, (v) => st.ttsProvider = v),
+        _FreeVoicePicker(state: widget.state),
+        slider('سرعة الصوت المجاني', st.edgeRate.toDouble(), -30, 40, (v) => st.edgeRate = v.round(), divisions: 14, fmt: (v) => '${v.round()}%'),
+        const Divider(height: 28),
         const Text('البدائل لو فشل الأساسي:'),
         Wrap(spacing: 8, children: [
-          for (final t in [TtsProvider.munsit, TtsProvider.elevenlabs, TtsProvider.huggingface, TtsProvider.device])
+          for (final t in [TtsProvider.munsit, TtsProvider.elevenlabs, TtsProvider.huggingface, TtsProvider.google, TtsProvider.device])
             FilterChip(
               label: Text(ttsNames[t]!.split(' (').first),
               selected: st.ttsFallbacks.contains(t),
@@ -202,7 +217,9 @@ class _SettingsPageState extends State<SettingsPage> {
       // ---------------- المقاطع ----------------
       SectionCard(title: 'المقاطع والصور', icon: Icons.video_collection_rounded, children: [
         dropdown('المصدر', st.mediaProvider, {
-          MediaProvider.pexels: 'Pexels (مقاطع مجانية) ⭐',
+          MediaProvider.freeAi: 'صور ذكاء اصطناعي مجانية بدون مفتاح ⭐',
+          MediaProvider.openverse: 'صور حقيقية مجانية (Openverse)',
+          MediaProvider.pexels: 'Pexels (مقاطع فيديو، بمفتاح مجاني)',
           MediaProvider.pixabay: 'Pixabay (مقاطع مجانية)',
           MediaProvider.local: 'من ملفاتي',
           MediaProvider.aiImages: 'صور بالذكاء الاصطناعي (Hugging Face)',
@@ -256,6 +273,38 @@ class _SettingsPageState extends State<SettingsPage> {
 
       // ---------------- درايف ----------------
       SectionCard(title: 'Google Drive', icon: Icons.add_to_drive_rounded, children: [
+        const Text('أسهل طريقة بدون أي ربط: نزّل برنامج Google Drive للكمبيوتر، وبعدين اختار مجلد درايف هون، وكل ريل بينسخ عليه لحاله.'),
+        link('تنزيل Google Drive للكمبيوتر', 'https://www.google.com/drive/download/'),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.folder_special_rounded),
+          title: const Text('مجلد Google Drive على الجهاز'),
+          subtitle: Text(st.driveSyncFolder.isEmpty ? 'ما في' : st.driveSyncFolder),
+          trailing: Wrap(children: [
+            TextButton(
+              onPressed: () {
+                final d = detectDriveFolder();
+                if (d == null) {
+                  toast(context, 'ما لقيت مجلد Google Drive. نزّل البرنامج أو اختار المجلد يدوياً');
+                } else {
+                  changed(() => st.driveSyncFolder = d);
+                }
+              },
+              child: const Text('اكتشاف'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final d = await FilePicker.getDirectoryPath();
+                if (d != null) changed(() => st.driveSyncFolder = d);
+              },
+              child: const Text('اختار'),
+            ),
+            if (st.driveSyncFolder.isNotEmpty) IconButton(onPressed: () => changed(() => st.driveSyncFolder = ''), icon: const Icon(Icons.clear_rounded)),
+          ]),
+        ),
+        if (Platform.isAndroid) const Text('على الجوال: افتح الريل من المكتبة واكبس "مشاركة" واختار Drive.'),
+        const Divider(height: 28),
+        const Text('أو الربط المباشر (للمتقدمين):', style: TextStyle(fontWeight: FontWeight.w800)),
         _DriveSection(state: widget.state, onChanged: () => setState(() {})),
       ]),
 
@@ -543,6 +592,88 @@ class _DriveSectionState extends State<_DriveSection> {
               widget.state.saveSettings();
             },
             child: const Text('فصل'),
+          ),
+      ]),
+    ]);
+  }
+}
+
+
+/// يدور على مجلد Google Drive للكمبيوتر (ويندوز).
+String? detectDriveFolder() {
+  final candidates = <String>[];
+  if (Platform.isWindows) {
+    for (final l in 'DEFGHIJKLMNOPQRSTUVWXYZ'.split('')) {
+      candidates.addAll(['$l:\\My Drive', '$l:\\ملفاتي', '$l:\\Mon Drive']);
+    }
+    final home = Platform.environment['USERPROFILE'] ?? '';
+    candidates.addAll(['$home\\Google Drive\\My Drive', '$home\\Google Drive', '$home\\My Drive']);
+  } else {
+    final home = Platform.environment['HOME'] ?? '';
+    candidates.addAll(['$home/Google Drive/My Drive', '$home/Google Drive']);
+  }
+  for (final c in candidates) {
+    if (Directory(c).existsSync()) {
+      final d = Directory('$c${Platform.pathSeparator}Reels Maker')..createSync(recursive: true);
+      return d.path;
+    }
+  }
+  return null;
+}
+
+class _FreeVoicePicker extends StatefulWidget {
+  final AppState state;
+  const _FreeVoicePicker({required this.state});
+  @override
+  State<_FreeVoicePicker> createState() => _FreeVoicePickerState();
+}
+
+class _FreeVoicePickerState extends State<_FreeVoicePicker> {
+  final player = Player();
+  String? loading;
+
+  @override
+  void dispose() {
+    player.dispose();
+    super.dispose();
+  }
+
+  Future<void> preview(FreeVoice v) async {
+    setState(() => loading = v.id);
+    try {
+      final bytes = await EdgeTts.synthesize('يا هلا والله! هاد صوتي، شو رأيك فيه؟ رح نعمل مع بعض ريلز بتكسر الدنيا.', v.id);
+      final f = File('${Directory.systemTemp.path}${Platform.pathSeparator}voice_${v.id}.mp3');
+      await f.writeAsBytes(bytes);
+      await player.open(Media(f.path));
+    } catch (e) {
+      if (mounted) toast(context, '$e');
+    } finally {
+      if (mounted) setState(() => loading = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final st = widget.state.settings;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const Padding(
+        padding: EdgeInsets.only(bottom: 6),
+        child: Text('الصوت المجاني (اسمع واختار):', style: TextStyle(fontWeight: FontWeight.w700)),
+      ),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        for (final v in freeArabicVoices)
+          InputChip(
+            selected: st.edgeVoice == v.id,
+            label: Text('${v.name} • ${v.details}'),
+            avatar: loading == v.id
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.play_arrow_rounded, size: 18),
+            onPressed: () => preview(v),
+            onSelected: (_) {
+              setState(() => st.edgeVoice = v.id);
+              widget.state.saveSettings();
+              preview(v);
+            },
           ),
       ]),
     ]);

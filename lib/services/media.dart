@@ -26,18 +26,21 @@ class MediaService {
   Future<String?> forScene(String query, String dir, int index,
       {String fallbackQuery = ''}) async {
     final q = query.trim().isEmpty ? fallbackQuery : query;
-    final order = <MediaProvider>[
+    if (settings.mediaProvider == MediaProvider.gradient) return null;
+    // المصادر المجانية دايماً بالآخر كاحتياط
+    final order = <MediaProvider>{
       settings.mediaProvider,
-      if (settings.mediaProvider != MediaProvider.pexels && settings.pexelsKey.isNotEmpty)
-        MediaProvider.pexels,
-      if (settings.mediaProvider != MediaProvider.pixabay && settings.pixabayKey.isNotEmpty)
-        MediaProvider.pixabay,
-      if (settings.mediaProvider != MediaProvider.local && settings.localMediaFolder.isNotEmpty)
-        MediaProvider.local,
-    ];
+      if (settings.pexelsKey.isNotEmpty) MediaProvider.pexels,
+      if (settings.pixabayKey.isNotEmpty) MediaProvider.pixabay,
+      if (settings.localMediaFolder.isNotEmpty) MediaProvider.local,
+      MediaProvider.freeAi,
+      MediaProvider.openverse,
+    }.toList();
     for (final m in order) {
       try {
         final r = switch (m) {
+          MediaProvider.freeAi => await _pollinations(q, dir, index),
+          MediaProvider.openverse => await _openverse(q, dir, index),
           MediaProvider.pexels => await _pexels(q, dir, index),
           MediaProvider.pixabay => await _pixabay(q, dir, index),
           MediaProvider.local => _local(q),
@@ -62,6 +65,49 @@ class MediaService {
     final f = File(path);
     final sink = f.openWrite();
     await res.stream.pipe(sink);
+    return path;
+  }
+
+  /// صور بالذكاء الاصطناعي مجاناً بدون مفتاح (Pollinations).
+  Future<String?> _pollinations(String q, String dir, int i) async {
+    if (q.isEmpty) return null;
+    final prompt = Uri.encodeComponent(
+        '$q, cinematic vertical photo, dramatic lighting, highly detailed, no text');
+    final w = settings.width, h = settings.height;
+    final url =
+        'https://image.pollinations.ai/prompt/$prompt?width=$w&height=$h&nologo=true&seed=${_rnd.nextInt(1 << 30)}';
+    final path = p.join(dir, 'media_$i.jpg');
+    final r = await _http.get(Uri.parse(url)).timeout(const Duration(minutes: 2));
+    final ct = r.headers['content-type'] ?? '';
+    if (r.statusCode != 200 || !ct.startsWith('image/') || r.bodyBytes.length < 5000) {
+      throw Exception('Pollinations ${r.statusCode}');
+    }
+    await File(path).writeAsBytes(r.bodyBytes);
+    log('🖼️ صورة AI مجانية للمشهد ${i + 1} ($q)');
+    return path;
+  }
+
+  /// صور حقيقية برخصة حرة من Openverse (بدون مفتاح).
+  Future<String?> _openverse(String q, String dir, int i) async {
+    if (q.isEmpty) return null;
+    final r = await _http.get(
+        Uri.parse(
+            'https://api.openverse.org/v1/images/?q=${Uri.encodeQueryComponent(q)}&page_size=20&mature=false'),
+        headers: {'User-Agent': 'ReelsMaker/1.0'}).timeout(const Duration(seconds: 30));
+    if (r.statusCode != 200) throw Exception('Openverse ${r.statusCode}');
+    final results = (jsonDecode(r.body)['results'] as List? ?? [])
+        .where((x) => !_usedIds.contains('ov${x['id']}') && (x['width'] ?? 0) >= 800)
+        .toList();
+    if (results.isEmpty) return null;
+    // نفضل الصور الطولية
+    results.sort((a, b) => ((b['height'] ?? 0) / (b['width'] ?? 1))
+        .compareTo((a['height'] ?? 0) / (a['width'] ?? 1)));
+    final x = results[_rnd.nextInt(min(4, results.length))];
+    _usedIds.add('ov${x['id']}');
+    final ext = p.extension(Uri.parse(x['url']).path).toLowerCase();
+    final path = p.join(dir, 'media_$i${imageExt.contains(ext) ? ext : '.jpg'}');
+    await _download(x['url'], path, headers: {'User-Agent': 'ReelsMaker/1.0'});
+    log('📷 صورة من Openverse للمشهد ${i + 1}');
     return path;
   }
 

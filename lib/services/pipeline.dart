@@ -88,8 +88,8 @@ class Pipeline {
     log('🔎 بدور على التريند: $t');
     final items = picked ?? await trends.fetchAll(topic: t);
     _check();
-    if (items.isEmpty && !writer.canUseClaude) {
-      throw Exception('ما لقيت تريند (يمكن ما في نت). جرب "من فكرتي".');
+    if (items.isEmpty) {
+      log('⚠️ ما لقيت تريند جاهز، رح أكتب عن الموضوع مباشرة');
     }
     final previous = (await store.all()).take(40).map((r) => r.title).toList();
     onStage?.call('كتابة السكربت', 0.08);
@@ -178,7 +178,24 @@ class Pipeline {
     r.error = null;
     await store.save(r);
 
-    // 4) درايف
+    // 4) نسخة لمجلد Google Drive على الكمبيوتر (بدون ربط)
+    final sync = settings.driveSyncFolder;
+    if (sync.isNotEmpty && Directory(sync).existsSync()) {
+      try {
+        for (final f in [res.video, p.setExtension(res.video, '.txt')]) {
+          if (File(f).existsSync()) await File(f).copy(p.join(sync, p.basename(f)));
+        }
+        log('☁️ انحفظ بمجلد Google Drive: $sync');
+        if (r.status != ReelStatus.uploaded) {
+          r.status = ReelStatus.uploaded;
+          await store.save(r);
+        }
+      } catch (e) {
+        log('⚠️ ما قدرت أنسخ لمجلد درايف: $e');
+      }
+    }
+
+    // 5) درايف (ربط مباشر)
     if (upload && settings.autoUpload && drive.isConnected) {
       stage('الرفع على درايف', 0.92);
       try {

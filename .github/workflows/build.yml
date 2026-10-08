@@ -26,6 +26,28 @@ jobs:
       - run: flutter analyze --no-fatal-infos
       - run: flutter test
 
+  e2e:
+    # تجربة حقيقية للخدمات المجانية وعمل ريل كامل (للفحص فقط)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: flutter pub get
+      - run: dart run tool/e2e.dart e2e_out
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: e2e
+          path: |
+            e2e_out/out
+            e2e_out/edge.mp3
+
   windows:
     needs: test
     runs-on: windows-latest
@@ -83,6 +105,7 @@ jobs:
 
   release:
     needs: [windows, android]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v5

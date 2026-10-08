@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 
 import '../core/engine.dart';
 import '../core/settings.dart';
+import 'free_tts.dart';
 
 /// صوت الجهاز (بيتنفذ بطبقة Flutter لأنه بيحتاج plugin على أندرويد).
 typedef DeviceTtsFn = Future<String?> Function(String text, String outPathNoExt);
@@ -29,6 +30,8 @@ class TtsService {
       : _http = client ?? http.Client();
 
   String providerName(TtsProvider p) => switch (p) {
+        TtsProvider.edge => 'صوت مجاني (مايكروسوفت)',
+        TtsProvider.google => 'صوت Google المجاني',
         TtsProvider.munsit => 'منصت',
         TtsProvider.elevenlabs => 'ElevenLabs',
         TtsProvider.huggingface => 'Hugging Face',
@@ -37,6 +40,7 @@ class TtsService {
       };
 
   bool isConfigured(TtsProvider p) => switch (p) {
+        TtsProvider.edge || TtsProvider.google => true,
         TtsProvider.munsit =>
           settings.munsitKey.isNotEmpty && settings.munsitVoiceId.isNotEmpty,
         TtsProvider.elevenlabs =>
@@ -48,10 +52,15 @@ class TtsService {
 
   /// يولد صوت للنص ويرجع مسار الملف، أو null لو كل المزودين فشلوا.
   Future<String?> synthesize(String text, String outPathNoExt) async {
-    final order = <TtsProvider>[
+    if (settings.ttsProvider == TtsProvider.none) return null;
+    // المجاني دايماً بالآخر كاحتياط، عشان التطبيق يشتغل بدون مفاتيح
+    final order = <TtsProvider>{
       settings.ttsProvider,
-      ...settings.ttsFallbacks.where((f) => f != settings.ttsProvider),
-    ].where((p) => p != TtsProvider.none).toList();
+      ...settings.ttsFallbacks.where((f) => f != TtsProvider.device),
+      TtsProvider.edge,
+      TtsProvider.google,
+      TtsProvider.device,
+    }.where((p) => p != TtsProvider.none).toList();
     for (final prov in order) {
       if (!isConfigured(prov)) continue;
       try {
@@ -67,12 +76,31 @@ class TtsService {
   }
 
   Future<String?> _synth(TtsProvider prov, String text, String out) => switch (prov) {
+        TtsProvider.edge => _edge(text, out),
+        TtsProvider.google => _google(text, out),
         TtsProvider.munsit => _munsit(text, out),
         TtsProvider.elevenlabs => _eleven(text, out),
         TtsProvider.huggingface => _hf(text, out),
         TtsProvider.device => _device(text, out),
         TtsProvider.none => Future.value(null),
       };
+
+  // ---------------- مجاني ----------------
+  Future<String> _edge(String text, String out) async {
+    final r = settings.edgeRate;
+    final bytes = await EdgeTts.synthesize(text, settings.edgeVoice,
+        rate: '${r >= 0 ? '+' : ''}$r%');
+    final path = '$out.mp3';
+    await File(path).writeAsBytes(bytes);
+    return path;
+  }
+
+  Future<String> _google(String text, String out) async {
+    final bytes = await GoogleTts.synthesize(text, client: _http);
+    final path = '$out.mp3';
+    await File(path).writeAsBytes(bytes);
+    return path;
+  }
 
   // ---------------- منصت ----------------
   Future<String> _munsit(String text, String out) async {
