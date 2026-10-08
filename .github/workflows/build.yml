@@ -54,6 +54,34 @@ jobs:
           c https://gen.pollinations.ai/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"openai","messages":[{"role":"user","content":"hi"}]}'
           c https://api.llm7.io/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"قل مرحبا"}]}'
           c https://api.llm7.io/v1/models
+      - name: diag capture
+        continue-on-error: true
+        run: |
+          cat > cap.py <<'PY'
+          import socket
+          srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+          srv.bind(('127.0.0.1', 8765)); srv.listen(5); srv.settimeout(120)
+          for n in range(4):
+              try: c, _ = srv.accept()
+              except Exception: break
+              c.settimeout(5)
+              try: data = c.recv(65536).decode('latin1')
+              except Exception: data = ''
+              print('::notice::REQ%d %s' % (n, data.replace('\r\n', ' || ')))
+              c.close()
+          PY
+          python3 cap.py > cap.log &
+          sleep 1
+          python3 - <<'PY' || true
+          import asyncio, edge_tts, edge_tts.communicate as cm
+          cm.WSS_URL = 'ws://127.0.0.1:8765/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4'
+          async def m():
+              try: await edge_tts.Communicate('مرحبا هذا اختبار', 'ar-SA-HamedNeural').save('x.mp3')
+              except Exception as e: print('py err', e)
+          asyncio.run(m())
+          PY
+          CAPTURE=1 timeout 60 dart run tool/diag.dart || true
+          sleep 2; cat cap.log
       - name: diag dart
         continue-on-error: true
         run: PY_GEC=$(python3 -c "from edge_tts.drm import DRM; print(DRM.generate_sec_ms_gec())") dart run tool/diag.dart

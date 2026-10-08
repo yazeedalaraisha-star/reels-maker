@@ -153,16 +153,18 @@ class TrendsService {
     }
     if (settings.useYoutube && !hasTopic) jobs['YouTube'] = youtube();
 
-    final out = <TrendItem>[];
-    for (final e in jobs.entries) {
+    // كل طلب بيمسك غلطه لحاله، عشان ما يطلع خطأ مش ممسوك لو فشل قبل ما نوصله
+    final results = await Future.wait(jobs.entries.map((e) async {
       try {
         final items = await e.value;
         log('📈 ${e.key}: ${items.length} عنصر');
-        out.addAll(items);
+        return items;
       } catch (err) {
         log('⚠️ ما قدرت أجيب من ${e.key}: $err');
+        return <TrendItem>[];
       }
-    }
+    }));
+    final out = results.expand((x) => x).toList();
     // إزالة المكرر
     final seen = <String>{};
     return out.where((t) => seen.add(t.title.toLowerCase().trim())).toList();
