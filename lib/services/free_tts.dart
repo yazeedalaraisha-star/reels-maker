@@ -100,18 +100,43 @@ class EdgeTts {
   static Future<Uint8List> _once(
       String text, String voice, String rate, String pitch, String ver) async {
     final major = ver.split('.').first;
-    final url =
-        'wss://speech.platform.bing.com:443/consumer/speech/synthesize/readaloud/edge/v1'
-        '?TrustedClientToken=$_token&Sec-MS-GEC=${_secMsGec()}&Sec-MS-GEC-Version=1-$ver&ConnectionId=${_hex(32)}';
-    final ws = await WebSocket.connect(url, headers: {
-      'Pragma': 'no-cache',
-      'Cache-Control': 'no-cache',
-      'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$major.0.0.0 Safari/537.36 Edg/$major.0.0.0',
-      'Cookie': 'muid=${_hex(32).toUpperCase()};',
-    }).timeout(const Duration(seconds: 20));
+    const host = 'speech.platform.bing.com';
+    final url = 'https://$host/consumer/speech/synthesize/readaloud/edge/v1'
+        '?TrustedClientToken=$_token&ConnectionId=${_hex(32)}&Sec-MS-GEC=${_secMsGec()}&Sec-MS-GEC-Version=1-$ver';
+    // نعمل الـ upgrade يدوي: WebSocket.connect بيزيد "Dart/..." على User-Agent
+    // وسيرفر مايكروسوفت بيرفضه بـ 403.
+    final client = HttpClient()..userAgent = null;
+    final WebSocket ws;
+    try {
+      final req = await client.openUrl('GET', Uri.parse(url)).timeout(const Duration(seconds: 20));
+      req.headers.clear();
+      final key = base64.encode(List.generate(16, (_) => Random.secure().nextInt(256)));
+      final h = {
+        'Host': host,
+        'Upgrade': 'websocket',
+        'Connection': 'Upgrade',
+        'Sec-WebSocket-Key': key,
+        'Sec-WebSocket-Version': '13',
+        'Pragma': 'no-cache',
+        'Cache-Control': 'no-cache',
+        'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
+        'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$major.0.0.0 Safari/537.36 Edg/$major.0.0.0',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cookie': 'muid=${_hex(32).toUpperCase()};',
+      };
+      h.forEach((k, v) => req.headers.set(k, v, preserveHeaderCase: true));
+      final res = await req.close().timeout(const Duration(seconds: 20));
+      if (res.statusCode != 101) {
+        throw WebSocketException('HTTP ${res.statusCode}');
+      }
+      final socket = await res.detachSocket();
+      ws = WebSocket.fromUpgradedSocket(socket, serverSide: false);
+    } catch (e) {
+      client.close(force: true);
+      rethrow;
+    }
 
     final audio = BytesBuilder();
     final done = Completer<void>();
@@ -149,6 +174,7 @@ class EdgeTts {
     } finally {
       await sub.cancel();
       await ws.close();
+      client.close(force: true);
     }
     final bytes = audio.toBytes();
     if (bytes.length < 500) throw Exception('ما رجع صوت');

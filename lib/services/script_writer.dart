@@ -299,43 +299,65 @@ ${useWeb ? 'تقدر تستخدم البحث على النت عشان تتأكد
 "scenes":[{"narration":"...","on_screen":"...","search_query":"english visual words","highlight_words":["..."]}],
 "caption":"...","hashtags":["..."],"cta":"..."}]}''';
 
-  /// نموذج لغوي مجاني من Pollinations (ما بيحتاج مفتاح).
+  /// نماذج لغوية مجانية بدون مفتاح، بنجرب أكثر من خدمة بالترتيب.
+  static const _freeEndpoints = [
+    ('https://gen.pollinations.ai/v1/chat/completions', 'openai'),
+    ('https://api.llm7.io/v1/chat/completions', ''),
+    ('https://text.pollinations.ai/openai', 'openai'),
+  ];
+
   Future<String> freeLlm(String system, String user, {bool json = true}) async {
     Object? last;
-    for (var attempt = 0; attempt < 3; attempt++) {
-      try {
-        final r = await _http
-            .post(
-              Uri.parse('https://text.pollinations.ai/openai'),
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'model': 'openai',
-                'messages': [
-                  {'role': 'system', 'content': system},
-                  {'role': 'user', 'content': user},
-                ],
-                if (json) 'response_format': {'type': 'json_object'},
-                'seed': Random().nextInt(1 << 30),
-                'referrer': 'reels-maker',
-              }),
-            )
-            .timeout(const Duration(minutes: 3));
-        if (r.statusCode == 200) {
-          final body = utf8.decode(r.bodyBytes);
-          try {
-            final j = jsonDecode(body);
-            final c = j['choices']?[0]?['message']?['content'];
-            if (c is String && c.trim().isNotEmpty) return c;
-          } catch (_) {}
-          if (body.trim().isNotEmpty) return body;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      for (final (url, model) in _freeEndpoints) {
+        try {
+          final m = model.isNotEmpty ? model : await _llm7Model();
+          final r = await _http
+              .post(
+                Uri.parse(url),
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode({
+                  'model': m,
+                  'messages': [
+                    {'role': 'system', 'content': system},
+                    {'role': 'user', 'content': user},
+                  ],
+                }),
+              )
+              .timeout(const Duration(minutes: 3));
+          if (r.statusCode == 200) {
+            final body = utf8.decode(r.bodyBytes);
+            try {
+              final j = jsonDecode(body);
+              final c = j['choices']?[0]?['message']?['content'];
+              if (c is String && c.trim().isNotEmpty) return c;
+            } catch (_) {}
+          }
+          last = '${Uri.parse(url).host} ${r.statusCode}';
+        } catch (e) {
+          last = e;
         }
-        last = 'HTTP ${r.statusCode}';
-      } catch (e) {
-        last = e;
       }
       await Future.delayed(Duration(seconds: 3 * (attempt + 1)));
     }
     throw Exception('الذكاء المجاني ما رد: $last');
+  }
+
+  String? _llm7;
+  Future<String> _llm7Model() async {
+    if (_llm7 != null) return _llm7!;
+    try {
+      final r = await _http.get(Uri.parse('https://api.llm7.io/v1/models')).timeout(const Duration(seconds: 20));
+      final ids = [
+        for (final m in (jsonDecode(r.body)['data'] as List? ?? []))
+          if ((m['model_type'] ?? 'chat') == 'chat') '${m['id']}'
+      ];
+      _llm7 = ids.firstWhere((id) => id.toLowerCase().contains('mini') || id.toLowerCase().contains('flash'),
+          orElse: () => ids.isNotEmpty ? ids.first : 'default');
+    } catch (_) {
+      _llm7 = 'default';
+    }
+    return _llm7!;
   }
 
   Future<List<ReelProject>> _freeOrOffline(String prompt, String topic, int n,
