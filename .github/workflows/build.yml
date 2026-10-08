@@ -40,6 +40,11 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: flutter pub get
       - run: dart run tool/e2e.dart e2e_out
+      - name: pipeline report
+        if: always()
+        run: |
+          tail -n 7 e2e_out/pipeline.txt | sed 's/%/%25/g; s/^/::notice::/' || true
+          for f in e2e_out/out/*.mp4; do echo "::notice::$(basename "$f") $(ffprobe -v error -show_entries format=duration:stream=codec_type,width,height -of csv=p=0 "$f" | tr '\n' ' ')"; done
       - uses: actions/upload-artifact@v5
         if: always()
         with:

@@ -13,7 +13,9 @@ import 'package:reels_maker/services/script_writer.dart';
 import 'package:reels_maker/services/trends.dart';
 
 /// بيطبع السطر كـ annotation على GitHub عشان ينقرى من الـ API.
+IOSink? report;
 void note(String m) {
+  report?.writeln(m.replaceAll('\n', ' '));
   final clean = m.replaceAll('\n', ' ').replaceAll('%', '%25');
   stdout.writeln(Platform.environment['GITHUB_ACTIONS'] == 'true' ? '::notice::$clean' : m);
 }
@@ -63,6 +65,7 @@ Future<void> _main(List<String> args) async {
   await check('Reddit', () async => '${(await trends.reddit('todayilearned')).length} items');
 
   stdout.writeln('\n━━ Full pipeline ━━');
+  report = File('${dir.path}/pipeline.txt').openWrite();
   final p = Pipeline(
     settings: s,
     engine: ProcessMediaEngine(),
@@ -86,4 +89,6 @@ Future<void> _main(List<String> args) async {
     note('❌ ما طلع ولا ريل');
     exitCode = 1;
   }
+  await report?.flush();
+  await report?.close();
 }
