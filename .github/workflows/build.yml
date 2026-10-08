@@ -39,6 +39,21 @@ jobs:
           cache: true
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: flutter pub get
+      - name: diag free services
+        continue-on-error: true
+        run: |
+          pip install -q edge-tts || true
+          if edge-tts --voice ar-SA-HamedNeural --text "مرحبا هذا اختبار للصوت" --write-media py_edge.mp3; then echo "::notice::py edge-tts OK $(stat -c%s py_edge.mp3)"; else echo "::notice::py edge-tts FAILED"; fi
+          echo "::notice::edge-tts version $(pip show edge-tts | grep Version)"
+          c() { code=$(curl -s -o r.txt -w '%{http_code}' --max-time 60 "$@"); echo "::notice::$code $1 :: $(head -c 300 r.txt | tr '\n' ' ')"; }
+          c "https://text.pollinations.ai/%D9%82%D9%84%20%D9%85%D8%B1%D8%AD%D8%A8%D8%A7?model=openai"
+          c "https://text.pollinations.ai/hello"
+          c https://text.pollinations.ai/openai -H 'Content-Type: application/json' -d '{"model":"openai","messages":[{"role":"user","content":"hi"}]}'
+          c https://text.pollinations.ai/ -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"hi"}]}'
+          c https://text.pollinations.ai/models
+          c https://gen.pollinations.ai/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"openai","messages":[{"role":"user","content":"hi"}]}'
+          c https://api.llm7.io/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"قل مرحبا"}]}'
+          c https://api.llm7.io/v1/models
       - run: dart run tool/e2e.dart e2e_out
       - uses: actions/upload-artifact@v5
         if: always()

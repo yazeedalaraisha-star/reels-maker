@@ -6,6 +6,7 @@ import 'package:reels_maker/core/engine.dart';
 import 'package:reels_maker/core/settings.dart';
 import 'package:reels_maker/services/free_tts.dart';
 import 'package:reels_maker/services/media.dart';
+import 'package:reels_maker/core/models.dart';
 import 'package:reels_maker/services/pipeline.dart';
 import 'package:reels_maker/services/script_writer.dart';
 import 'package:reels_maker/services/trends.dart';
@@ -65,7 +66,12 @@ Future<void> main(List<String> args) async {
     log: log,
   );
   final logs = <String>[];
-  final reels = await p.runAuto(topic: 'ترند اليوم');
+  var reels = <ReelProject>[];
+  try {
+    reels = await p.runAuto(topic: 'ترند اليوم');
+  } catch (e, st) {
+    note('❌ pipeline crashed: $e ${st.toString().split('\n').take(6).join(' | ')}');
+  }
   logs.clear();
   for (final r in reels) {
     note('🎬 ${r.title} → ${r.outputPath} | ${r.scenes.map((sc) => '[${sc.narration} | media=${sc.mediaPath != null} audio=${sc.audioDuration?.toStringAsFixed(1)}]').join(' ')}');

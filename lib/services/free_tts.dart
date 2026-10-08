@@ -101,7 +101,7 @@ class EdgeTts {
       String text, String voice, String rate, String pitch, String ver) async {
     final major = ver.split('.').first;
     final url =
-        'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1'
+        'wss://speech.platform.bing.com:443/consumer/speech/synthesize/readaloud/edge/v1'
         '?TrustedClientToken=$_token&Sec-MS-GEC=${_secMsGec()}&Sec-MS-GEC-Version=1-$ver&ConnectionId=${_hex(32)}';
     final ws = await WebSocket.connect(url, headers: {
       'Pragma': 'no-cache',
