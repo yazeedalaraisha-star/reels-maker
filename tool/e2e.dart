@@ -1,3 +1,4 @@
+import 'dart:async';
 // تجربة كاملة بدون مفاتيح: dart run tool/e2e.dart <مجلد>
 // بتفحص كل خدمة مجانية لحالها، وبعدين بتعمل ريل كامل من التريند.
 import 'dart:io';
@@ -27,7 +28,12 @@ Future<void> check(String name, Future<String> Function() f) async {
   }
 }
 
-Future<void> main(List<String> args) async {
+Future<void> main(List<String> args) => runZonedGuarded(() => _main(args), (e, st) {
+      note('❌ uncaught: $e ${st.toString().split('\n').take(8).join(' | ')}');
+      exitCode = 1;
+    }) ?? Future.value();
+
+Future<void> _main(List<String> args) async {
   final dir = Directory(args.isNotEmpty ? args.first : 'e2e_out')..createSync(recursive: true);
   final s = AppSettings(quality: '720', reelsPerRun: 1, targetSeconds: 25);
   void log(String m) {

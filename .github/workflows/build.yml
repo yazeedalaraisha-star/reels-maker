@@ -54,6 +54,9 @@ jobs:
           c https://gen.pollinations.ai/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"openai","messages":[{"role":"user","content":"hi"}]}'
           c https://api.llm7.io/v1/chat/completions -H 'Content-Type: application/json' -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"قل مرحبا"}]}'
           c https://api.llm7.io/v1/models
+      - name: diag dart
+        continue-on-error: true
+        run: PY_GEC=$(python3 -c "from edge_tts.drm import DRM; print(DRM.generate_sec_ms_gec())") dart run tool/diag.dart
       - run: dart run tool/e2e.dart e2e_out
       - uses: actions/upload-artifact@v5
         if: always()
