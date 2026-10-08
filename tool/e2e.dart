@@ -10,20 +10,29 @@ import 'package:reels_maker/services/pipeline.dart';
 import 'package:reels_maker/services/script_writer.dart';
 import 'package:reels_maker/services/trends.dart';
 
+/// بيطبع السطر كـ annotation على GitHub عشان ينقرى من الـ API.
+void note(String m) {
+  final clean = m.replaceAll('\n', ' ').replaceAll('%', '%25');
+  stdout.writeln(Platform.environment['GITHUB_ACTIONS'] == 'true' ? '::notice::$clean' : m);
+}
+
 Future<void> check(String name, Future<String> Function() f) async {
   final sw = Stopwatch()..start();
   try {
     final r = await f();
-    stdout.writeln('✅ $name (${sw.elapsedMilliseconds}ms): $r');
+    note('✅ $name (${sw.elapsedMilliseconds}ms): $r');
   } catch (e) {
-    stdout.writeln('❌ $name (${sw.elapsedMilliseconds}ms): $e');
+    note('❌ $name (${sw.elapsedMilliseconds}ms): $e');
   }
 }
 
 Future<void> main(List<String> args) async {
   final dir = Directory(args.isNotEmpty ? args.first : 'e2e_out')..createSync(recursive: true);
   final s = AppSettings(quality: '720', reelsPerRun: 1, targetSeconds: 25);
-  void log(String m) => stdout.writeln('   $m');
+  void log(String m) {
+    stdout.writeln('   $m');
+    if (m.contains('⚠️') || m.contains('❌')) note(m);
+  }
 
   await check('Edge TTS', () async {
     final b = await EdgeTts.synthesize('يا هلا والله، هاد اختبار للصوت المجاني', 'ar-SA-HamedNeural');
@@ -55,12 +64,14 @@ Future<void> main(List<String> args) async {
     outputDir: '${dir.path}/out',
     log: log,
   );
+  final logs = <String>[];
   final reels = await p.runAuto(topic: 'ترند اليوم');
+  logs.clear();
   for (final r in reels) {
-    stdout.writeln('🎬 ${r.title} → ${r.outputPath}');
-    for (final sc in r.scenes) {
-      stdout.writeln('   - ${sc.narration} | media=${sc.mediaPath != null} audio=${sc.audioDuration}');
-    }
+    note('🎬 ${r.title} → ${r.outputPath} | ${r.scenes.map((sc) => '[${sc.narration} | media=${sc.mediaPath != null} audio=${sc.audioDuration?.toStringAsFixed(1)}]').join(' ')}');
   }
-  if (reels.isEmpty) exitCode = 1;
+  if (reels.isEmpty) {
+    note('❌ ما طلع ولا ريل');
+    exitCode = 1;
+  }
 }
