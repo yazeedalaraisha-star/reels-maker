@@ -306,7 +306,8 @@ ${useWeb ? 'تقدر تستخدم البحث على النت عشان تتأكد
     ('https://text.pollinations.ai/openai', 'openai'),
   ];
 
-  Future<String> freeLlm(String system, String user, {bool json = true}) async {
+  Future<String> freeLlm(String system, String user,
+      {bool json = true, bool Function(String)? valid}) async {
     Object? last;
     for (var attempt = 0; attempt < 2; attempt++) {
       for (final (url, model) in _freeEndpoints) {
@@ -322,6 +323,7 @@ ${useWeb ? 'تقدر تستخدم البحث على النت عشان تتأكد
                     {'role': 'system', 'content': system},
                     {'role': 'user', 'content': user},
                   ],
+                  'max_tokens': 8000,
                 }),
               )
               .timeout(const Duration(minutes: 3));
@@ -330,7 +332,11 @@ ${useWeb ? 'تقدر تستخدم البحث على النت عشان تتأكد
             try {
               final j = jsonDecode(body);
               final c = j['choices']?[0]?['message']?['content'];
-              if (c is String && c.trim().isNotEmpty) return c;
+              if (c is String && c.trim().isNotEmpty) {
+                if (valid == null || valid(c)) return c;
+                last = '${Uri.parse(url).host}: رد ناقص';
+                continue;
+              }
             } catch (_) {}
           }
           last = '${Uri.parse(url).host} ${r.statusCode}';
@@ -365,10 +371,20 @@ ${useWeb ? 'تقدر تستخدم البحث على النت عشان تتأكد
     if (settings.scriptProvider != ScriptProvider.offline) {
       try {
         log('🧠 الذكاء الاصطناعي المجاني عم يكتب $n سكربتات...');
-        final raw = await freeLlm(_systemPrompt(), '$prompt\n$_jsonShape');
-        final reels = _parseText(raw, topic)
-            .where((r) => r.scenes.length >= 2)
-            .toList();
+        List<ReelProject> parse(String raw) =>
+            _parseText(raw, topic).where((r) => r.scenes.length >= 2).toList();
+        final raw = await freeLlm(_systemPrompt(), '$prompt\n$_jsonShape', valid: (c) {
+          try {
+            return parse(c).isNotEmpty;
+          } catch (_) {
+            return false;
+          }
+        });
+        final reels = parse(raw);
+        // لو رجع أقل من المطلوب نكمل بالمولد البسيط
+        if (reels.isNotEmpty && reels.length < n) {
+          reels.addAll(fallback().take(n - reels.length));
+        }
         if (reels.isNotEmpty) return reels;
       } catch (e) {
         log('⚠️ $e');
@@ -382,7 +398,8 @@ ${useWeb ? 'تقدر تستخدم البحث على النت عشان تتأكد
   ReelProject offlineFromTrend(TrendItem t) {
     final body = [
       'خلونا نحكي عن ${t.title}، الموضوع اللي الكل عم يحكي فيه هلأ.',
-      if (t.summary != null && t.summary!.trim().isNotEmpty) t.summary!,
+      if (t.summary != null && t.summary!.trim().isNotEmpty)
+        t.summary!.split(RegExp(r'\s[|•]\s|\n')).first.split(' ').take(30).join(' '),
       if (t.traffic != null) 'وصل عدد البحث عنه لـ ${t.traffic}.',
       'شو رأيكم بالموضوع؟ اكتبولنا بالتعليقات.',
     ].join(' ');

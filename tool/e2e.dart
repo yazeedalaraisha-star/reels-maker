@@ -37,7 +37,7 @@ Future<void> main(List<String> args) => runZonedGuarded(() => _main(args), (e, s
 
 Future<void> _main(List<String> args) async {
   final dir = Directory(args.isNotEmpty ? args.first : 'e2e_out')..createSync(recursive: true);
-  final s = AppSettings(quality: '720', reelsPerRun: 1, targetSeconds: 25);
+  final s = AppSettings(quality: '720', reelsPerRun: 3, targetSeconds: 25);
   void log(String m) {
     stdout.writeln('   $m');
     if (m.contains('⚠️') || m.contains('❌')) note(m);

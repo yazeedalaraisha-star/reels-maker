@@ -40,7 +40,10 @@ class MediaService {
       try {
         final r = switch (m) {
           MediaProvider.freeAi => await _pollinations(q, dir, index),
-          MediaProvider.openverse => await _openverse(q, dir, index),
+          MediaProvider.openverse => await _openverse(q, dir, index) ??
+              (fallbackQuery.isNotEmpty && fallbackQuery != q
+                  ? await _openverse(fallbackQuery, dir, index)
+                  : null),
           MediaProvider.pexels => await _pexels(q, dir, index),
           MediaProvider.pixabay => await _pixabay(q, dir, index),
           MediaProvider.local => _local(q),
@@ -77,10 +80,19 @@ class MediaService {
     final url =
         'https://image.pollinations.ai/prompt/$prompt?width=$w&height=$h&nologo=true&seed=${_rnd.nextInt(1 << 30)}';
     final path = p.join(dir, 'media_$i.jpg');
-    final r = await _http.get(Uri.parse(url)).timeout(const Duration(minutes: 2));
-    final ct = r.headers['content-type'] ?? '';
-    if (r.statusCode != 200 || !ct.startsWith('image/') || r.bodyBytes.length < 5000) {
-      throw Exception('Pollinations ${r.statusCode}');
+    // الخدمة المجانية بتسمح بطلب واحد كل كم ثانية، فبنعيد المحاولة بعد انتظار
+    late http.Response r;
+    for (var a = 0; a < 4; a++) {
+      if (a > 0) await Future.delayed(Duration(seconds: 8 * a));
+      try {
+        r = await _http.get(Uri.parse(url)).timeout(const Duration(minutes: 2));
+      } catch (e) {
+        if (a == 3) rethrow;
+        continue;
+      }
+      final ct = r.headers['content-type'] ?? '';
+      if (r.statusCode == 200 && ct.startsWith('image/') && r.bodyBytes.length >= 5000) break;
+      if (a == 3) throw Exception('Pollinations ${r.statusCode}');
     }
     await File(path).writeAsBytes(r.bodyBytes);
     log('🖼️ صورة AI مجانية للمشهد ${i + 1} ($q)');
