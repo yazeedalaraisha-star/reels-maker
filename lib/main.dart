@@ -1,15 +1,38 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'app/app_state.dart';
 import 'ui/shell.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  MediaKit.ensureInitialized();
-  final state = AppState();
-  runApp(ReelsMakerApp(state: state, ready: state.init()));
+/// بنسجل أي خطأ بالتشغيل بملف عشان نعرف السبب لو التطبيق ما فتح.
+void _logCrash(Object e, StackTrace? st) {
+  try {
+    File(p.join(Directory.systemTemp.path, 'ReelsMaker-crash.txt'))
+        .writeAsStringSync('${DateTime.now()}\n$e\n$st\n\n', mode: FileMode.append);
+  } catch (_) {}
+}
+
+void main() {
+  runZonedGuarded(() {
+    WidgetsFlutterBinding.ensureInitialized();
+    FlutterError.onError = (d) {
+      FlutterError.presentError(d);
+      _logCrash(d.exception, d.stack);
+    };
+    try {
+      MediaKit.ensureInitialized();
+    } catch (e, st) {
+      // المشغّل اختياري: التطبيق لازم يفتح حتى لو فشل
+      _logCrash(e, st);
+    }
+    final state = AppState();
+    runApp(ReelsMakerApp(state: state, ready: state.init()));
+  }, _logCrash);
 }
 
 class ReelsMakerApp extends StatelessWidget {

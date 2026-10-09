@@ -65,6 +65,21 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter build windows --release
+      - name: Bundle VC++ runtime
+        shell: pwsh
+        run: |
+          $rel = "build/windows/x64/runner/Release"
+          foreach ($d in "msvcp140.dll","msvcp140_1.dll","msvcp140_2.dll","vcruntime140.dll","vcruntime140_1.dll","concrt140.dll") {
+            $src = Join-Path $env:WINDIR "System32/$d"
+            if (Test-Path $src) { Copy-Item $src $rel -Force }
+          }
+      - name: Smoke test (launch exe)
+        shell: pwsh
+        run: |
+          $rel = "build/windows/x64/runner/Release"
+          $files = (Get-ChildItem $rel | ForEach-Object Name) -join ', '
+          echo "::notice::Release files: $files"
+          ./tool/win_smoke.ps1 "$rel/ReelsMaker.exe" "portable"
       - name: Zip portable build
         shell: pwsh
         run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath ReelsMaker-Windows-Portable.zip
@@ -74,6 +89,13 @@ jobs:
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer/ReelsMaker.iss
+      - name: Smoke test (installer)
+        shell: pwsh
+        run: |
+          $p = Start-Process installer/Output/ReelsMaker-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG=setup.log' -PassThru -Wait
+          echo "::notice::setup exit=$($p.ExitCode)"
+          $exe = Get-ChildItem "$env:ProgramFiles","${env:ProgramFiles(x86)}","$env:LOCALAPPDATA\Programs" -Recurse -Filter ReelsMaker.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { echo "::notice::installed exe NOT FOUND"; Get-Content setup.log -Tail 15 | % { echo "::notice::$_" } } else { ./tool/win_smoke.ps1 $exe.FullName "installed" }
       - uses: actions/upload-artifact@v5
         with:
           name: windows
@@ -103,6 +125,20 @@ jobs:
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk dist/ReelsMaker-Android-arm64.apk
           cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk dist/ReelsMaker-Android-arm32.apk
           cp build/app/outputs/flutter-apk/app-x86_64-release.apk dist/ReelsMaker-Android-x86_64.apk || true
+      - run: flutter build apk --release
+      - run: cp build/app/outputs/flutter-apk/app-release.apk dist/ReelsMaker-Android.apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Smoke test (emulator)
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          script: bash tool/android_smoke.sh dist/ReelsMaker-Android.apk
       - uses: actions/upload-artifact@v5
         with:
           name: android

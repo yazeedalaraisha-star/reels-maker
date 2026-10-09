@@ -30,6 +30,8 @@ bool FlutterWindow::OnCreate() {
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
+  // نظهر الشباك حتى لو أول فريم تأخر أو صار خطأ، عشان ما يضل التطبيق مخفي
+  this->Show();
 
   // Flutter can complete the first frame before the "show window" callback is
   // registered. The following call ensures a frame is pending to ensure the
