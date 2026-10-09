@@ -162,7 +162,8 @@ jobs:
           body: |
             ## صانع الريلز
             - **ويندوز:** نزّل `ReelsMaker-Setup.exe` (مثبّت) أو `ReelsMaker-Windows-Portable.zip` (بدون تثبيت).
-            - **أندرويد:** نزّل `ReelsMaker-Android-arm64.apk` (لأغلب الجوالات). لو ما اشتغل جرّب `arm32`.
+            - **أندرويد:** نزّل `ReelsMaker-Android.apk` (بيشتغل على كل الجوالات).
+            - لو التطبيق ما فتح على ويندوز، ابعت الملف `%TEMP%\\ReelsMaker-crash.txt` إن وجد.
 
             Commit: ${{ github.sha }}
           files: |
